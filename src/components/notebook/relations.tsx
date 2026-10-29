@@ -9,6 +9,8 @@ import { Button } from "@/components/notebook/ui";
 export function Relations({ pageId }: { pageId: string }) {
   const pages = useNotebook((state) => state.pages);
   const links = useNotebook((state) => state.links);
+  const sections = useNotebook((state) => state.sections);
+  const notebooks = useNotebook((state) => state.notebooks);
   const openPage = useNotebook((state) => state.openPage);
   const linkPages = useNotebook((state) => state.linkPages);
   const unlink = useNotebook((state) => state.unlink);
@@ -67,7 +69,7 @@ export function Relations({ pageId }: { pageId: string }) {
                   setQuery("");
                 }}
               >
-                <span className="truncate">{item.title}</span>
+                <span className="min-w-0"><span className="block truncate">{item.title}</span><span className="block text-xs text-muted">{notebooks.find((row) => row.id === item.notebookId)?.title} · {sections.find((row) => row.id === item.sectionId)?.title}</span></span>
                 <span className="text-xs text-muted">{TYPE_LABEL[item.type]}</span>
               </button>
             </li>

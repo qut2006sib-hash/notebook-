@@ -3,7 +3,7 @@ import katex from "katex";
 import "katex/dist/katex.min.css";
 import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
 import { CALLOUT_LABEL, CODE_LANGS, type Block, type CalloutKind } from "@/lib/notebook/model";
-import { findPageByTitle } from "@/lib/notebook/query";
+import { normalizeTitle, resolveReference } from "@/lib/notebook/references";
 import { readImageFile } from "@/lib/notebook/persist";
 import { useNotebook } from "@/lib/notebook/store";
 import { Button } from "@/components/notebook/ui";
@@ -28,12 +28,14 @@ function AutoText({
   dir = "auto",
   mono = false,
   placeholder,
+  autoFocus = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   dir?: "auto" | "ltr" | "rtl";
   mono?: boolean;
   placeholder?: string;
+  autoFocus?: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
@@ -45,6 +47,7 @@ function AutoText({
   return (
     <textarea
       ref={ref}
+      autoFocus={autoFocus}
       value={value}
       placeholder={placeholder}
       dir={dir}
@@ -57,7 +60,7 @@ function AutoText({
   );
 }
 
-function RichText({ text }: { text: string }) {
+function RichText({ text, references }: { text: string; references?: Record<string, string> }) {
   const pages = useNotebook((state) => state.pages);
   const openPage = useNotebook((state) => state.openPage);
   if (!text) return <span className="text-muted">اكتب هنا…</span>;
@@ -68,7 +71,8 @@ function RichText({ text }: { text: string }) {
         const wiki = part.match(/^\[\[([^\]\n]+)\]\]$/);
         if (wiki) {
           const title = wiki[1]?.trim() ?? "";
-          const target = findPageByTitle(pages, title);
+          const targetId = references?.[normalizeTitle(title)];
+          const target = targetId ? pages.find((page) => page.id === targetId) : resolveReference(pages, title);
           if (!target) {
             return (
               <span key={index} className="text-muted underline decoration-dotted underline-offset-4">
@@ -86,7 +90,7 @@ function RichText({ text }: { text: string }) {
                 openPage(target.id);
               }}
             >
-              {title}
+              {target.title}
             </button>
           );
         }
@@ -118,7 +122,7 @@ function Toolbar({
   const moveBlock = useNotebook((state) => state.moveBlock);
   const removeBlock = useNotebook((state) => state.removeBlock);
   return (
-    <div className="mb-2 flex flex-wrap gap-2">
+    <div className="absolute -top-4 end-0 z-10 flex flex-wrap gap-2 rounded-md border border-line bg-sheet shadow-sm">
       <Button variant="ghost" aria-label="تحريك لأعلى" onMouseDown={(event) => event.preventDefault()} onClick={() => moveBlock(pageId, block.id, -1)}>
         <ArrowUp className="size-4" />
       </Button>
@@ -146,7 +150,7 @@ export function BlockView({ pageId, block }: { pageId: string; block: Block }) {
 
   return (
     <section
-      className="border-b border-line/70 py-4"
+      className="relative border-b border-line/70 py-4"
       onFocus={() => setSelected(true)}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) {
@@ -159,6 +163,7 @@ export function BlockView({ pageId, block }: { pageId: string; block: Block }) {
       {block.type === "heading" ? (
         editing ? (
           <AutoText
+            autoFocus
             value={block.text}
             placeholder="عنوان"
             onChange={(text) => updateBlock(pageId, { ...block, text })}
@@ -179,6 +184,7 @@ export function BlockView({ pageId, block }: { pageId: string; block: Block }) {
       {block.type === "paragraph" ? (
         editing ? (
           <AutoText
+            autoFocus
             value={block.text}
             placeholder="فقرة. المعادلة بين $دولارين$، والصفحة بين [[معقوفين]]."
             onChange={(text) => updateBlock(pageId, { ...block, text })}
@@ -186,6 +192,10 @@ export function BlockView({ pageId, block }: { pageId: string; block: Block }) {
         ) : (
           <div
             dir="auto"
+            role="button"
+            tabIndex={0}
+            aria-label="تعديل الفقرة"
+            onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setEditing(true); } }}
             className="w-full cursor-text whitespace-pre-wrap text-start text-pretty leading-relaxed"
             onClick={(event) => {
               const target = event.target as HTMLElement;
@@ -193,7 +203,7 @@ export function BlockView({ pageId, block }: { pageId: string; block: Block }) {
               setEditing(true);
             }}
           >
-            <RichText text={block.text} />
+            <RichText text={block.text} references={block.references} />
           </div>
         )
       ) : null}

@@ -10,13 +10,13 @@ export type TaskItem = {
   done: boolean;
 };
 
-export type ParagraphBlock = { id: string; type: "paragraph"; text: string };
+export type ParagraphBlock = { id: string; type: "paragraph"; text: string; references?: Record<string, string> };
 export type HeadingBlock = { id: string; type: "heading"; text: string; level: 2 | 3 };
 export type CodeBlock = { id: string; type: "code"; text: string; lang: string };
 export type MathBlock = { id: string; type: "math"; tex: string };
 export type ImageBlock = { id: string; type: "image"; src: string; alt: string };
 export type TableBlock = { id: string; type: "table"; headers: string[]; rows: string[][] };
-export type CalloutBlock = { id: string; type: "callout"; kind: CalloutKind; text: string };
+export type CalloutBlock = { id: string; type: "callout"; kind: CalloutKind; text: string; references?: Record<string, string> };
 export type TasksBlock = { id: string; type: "tasks"; items: TaskItem[] };
 
 export type Block =
@@ -101,7 +101,12 @@ export const CALLOUT_LABEL: Record<CalloutKind, string> = {
 export const CODE_LANGS = ["python", "text", "javascript", "sql", "bash"] as const;
 
 export function uid(): string {
-  return crypto.randomUUID();
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 export function createBlock(type: Block["type"]): Block {

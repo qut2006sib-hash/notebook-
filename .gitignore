@@ -8,3 +8,6 @@ screenshots
 .env
 .env.*
 .output
+
+dist-local
+release
