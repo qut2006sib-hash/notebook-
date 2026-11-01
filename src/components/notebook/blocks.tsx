@@ -1,9 +1,9 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import katex from "katex";
 import "katex/dist/katex.min.css";
-import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { CALLOUT_LABEL, CODE_LANGS, type Block, type CalloutKind } from "@/lib/notebook/model";
-import { findPageByTitle } from "@/lib/notebook/query";
+import { normalizeTitle, resolveReference } from "@/lib/notebook/references";
 import { readImageFile } from "@/lib/notebook/persist";
 import { useNotebook } from "@/lib/notebook/store";
 import { Button } from "@/components/notebook/ui";
@@ -28,12 +28,14 @@ function AutoText({
   dir = "auto",
   mono = false,
   placeholder,
+  autoFocus = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   dir?: "auto" | "ltr" | "rtl";
   mono?: boolean;
   placeholder?: string;
+  autoFocus?: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
@@ -45,6 +47,7 @@ function AutoText({
   return (
     <textarea
       ref={ref}
+      autoFocus={autoFocus}
       value={value}
       placeholder={placeholder}
       dir={dir}
@@ -57,7 +60,7 @@ function AutoText({
   );
 }
 
-function RichText({ text }: { text: string }) {
+function RichText({ text, references }: { text: string; references?: Record<string, string> }) {
   const pages = useNotebook((state) => state.pages);
   const openPage = useNotebook((state) => state.openPage);
   if (!text) return <span className="text-muted">اكتب هنا…</span>;
@@ -68,7 +71,8 @@ function RichText({ text }: { text: string }) {
         const wiki = part.match(/^\[\[([^\]\n]+)\]\]$/);
         if (wiki) {
           const title = wiki[1]?.trim() ?? "";
-          const target = findPageByTitle(pages, title);
+          const targetId = references?.[normalizeTitle(title)];
+          const target = targetId ? pages.find((page) => page.id === targetId) : resolveReference(pages, title);
           if (!target) {
             return (
               <span key={index} className="text-muted underline decoration-dotted underline-offset-4">
@@ -86,7 +90,7 @@ function RichText({ text }: { text: string }) {
                 openPage(target.id);
               }}
             >
-              {title}
+              {target.title}
             </button>
           );
         }
@@ -108,57 +112,27 @@ function RichText({ text }: { text: string }) {
   );
 }
 
-function Toolbar({
-  pageId,
-  block,
-}: {
-  pageId: string;
-  block: Block;
-}) {
-  const moveBlock = useNotebook((state) => state.moveBlock);
-  const removeBlock = useNotebook((state) => state.removeBlock);
-  return (
-    <div className="mb-2 flex flex-wrap gap-2">
-      <Button variant="ghost" aria-label="تحريك لأعلى" onMouseDown={(event) => event.preventDefault()} onClick={() => moveBlock(pageId, block.id, -1)}>
-        <ArrowUp className="size-4" />
-      </Button>
-      <Button variant="ghost" aria-label="تحريك لأسفل" onMouseDown={(event) => event.preventDefault()} onClick={() => moveBlock(pageId, block.id, 1)}>
-        <ArrowDown className="size-4" />
-      </Button>
-      <Button variant="ghost" aria-label="حذف الكتلة" onMouseDown={(event) => event.preventDefault()} onClick={() => removeBlock(pageId, block.id)}>
-        <Trash2 className="size-4" />
-        حذف
-      </Button>
-    </div>
-  );
-}
-
-export function BlockView({ pageId, block }: { pageId: string; block: Block }) {
+export function BlockView({ pageId, block, focusOnMount = false }: { pageId: string; block: Block; focusOnMount?: boolean }) {
   const updateBlock = useNotebook((state) => state.updateBlock);
   const addTask = useNotebook((state) => state.addTask);
   const updateTask = useNotebook((state) => state.updateTask);
   const removeTask = useNotebook((state) => state.removeTask);
   const setNotice = useNotebook((state) => state.setNotice);
-  const [editing, setEditing] = useState(false);
-  const [selected, setSelected] = useState(false);
-
-  const showTools = editing || selected;
+  const [editing, setEditing] = useState(focusOnMount);
 
   return (
     <section
-      className="border-b border-line/70 py-4"
-      onFocus={() => setSelected(true)}
+      className="relative border-b border-line/70 py-4"
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) {
-          setSelected(false);
           setEditing(false);
         }
       }}
     >
-      {showTools ? <Toolbar pageId={pageId} block={block} /> : null}
       {block.type === "heading" ? (
         editing ? (
           <AutoText
+            autoFocus
             value={block.text}
             placeholder="عنوان"
             onChange={(text) => updateBlock(pageId, { ...block, text })}
@@ -179,6 +153,7 @@ export function BlockView({ pageId, block }: { pageId: string; block: Block }) {
       {block.type === "paragraph" ? (
         editing ? (
           <AutoText
+            autoFocus
             value={block.text}
             placeholder="فقرة. المعادلة بين $دولارين$، والصفحة بين [[معقوفين]]."
             onChange={(text) => updateBlock(pageId, { ...block, text })}
@@ -186,6 +161,10 @@ export function BlockView({ pageId, block }: { pageId: string; block: Block }) {
         ) : (
           <div
             dir="auto"
+            role="button"
+            tabIndex={0}
+            aria-label="تعديل الفقرة"
+            onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setEditing(true); } }}
             className="w-full cursor-text whitespace-pre-wrap text-start text-pretty leading-relaxed"
             onClick={(event) => {
               const target = event.target as HTMLElement;
@@ -193,7 +172,7 @@ export function BlockView({ pageId, block }: { pageId: string; block: Block }) {
               setEditing(true);
             }}
           >
-            <RichText text={block.text} />
+            <RichText text={block.text} references={block.references} />
           </div>
         )
       ) : null}
@@ -202,20 +181,18 @@ export function BlockView({ pageId, block }: { pageId: string; block: Block }) {
         <div>
           <label className="mb-2 flex items-center gap-2 text-sm text-muted">
             لغة
-            <select
-              className="min-h-11 rounded-md border border-line bg-paper px-2 text-ink"
-              value={block.lang}
+            <input
+              aria-label="لغة الكود" list={`code-langs-${block.id}`} dir="ltr"
+              className="min-h-11 w-48 rounded-md border border-line bg-paper px-2 text-ink"
+              value={block.lang} placeholder="python"
               onChange={(event) => updateBlock(pageId, { ...block, lang: event.target.value })}
-            >
-              {CODE_LANGS.map((lang) => (
-                <option key={lang} value={lang}>
-                  {lang}
-                </option>
-              ))}
-            </select>
+            />
+            <datalist id={`code-langs-${block.id}`}>
+              {CODE_LANGS.map((lang) => <option key={lang} value={lang} />)}
+            </datalist>
           </label>
           <div dir="ltr" className="isolate-bidi overflow-x-auto rounded-md border border-line bg-paper p-3">
-            <AutoText mono dir="ltr" value={block.text} placeholder="code" onChange={(text) => updateBlock(pageId, { ...block, text })} />
+            <AutoText autoFocus={focusOnMount} mono dir="ltr" value={block.text} placeholder="code" onChange={(text) => updateBlock(pageId, { ...block, text })} />
           </div>
         </div>
       ) : null}
@@ -223,7 +200,7 @@ export function BlockView({ pageId, block }: { pageId: string; block: Block }) {
       {block.type === "math" ? (
         <div className="grid gap-3">
           <div dir="ltr" className="isolate-bidi rounded-md border border-line bg-paper p-3">
-            <AutoText mono dir="ltr" value={block.tex} placeholder="E = mc^2" onChange={(tex) => updateBlock(pageId, { ...block, tex })} />
+            <AutoText autoFocus={focusOnMount} mono dir="ltr" value={block.tex} placeholder="E = mc^2" onChange={(tex) => updateBlock(pageId, { ...block, tex })} />
           </div>
           <MathHtml tex={block.tex} display />
         </div>
@@ -406,12 +383,12 @@ const ADDERS: { type: Block["type"]; label: string }[] = [
   { type: "tasks", label: "أسئلة" },
 ];
 
-export function AddBlockBar({ pageId }: { pageId: string }) {
+export function AddBlockBar({ pageId, onAdded }: { pageId: string; onAdded?: (id: string) => void }) {
   const addBlock = useNotebook((state) => state.addBlock);
   return (
     <div className="flex flex-wrap gap-2 py-4">
       {ADDERS.map((item) => (
-        <Button key={item.type} variant="quiet" onClick={() => addBlock(pageId, item.type)}>
+        <Button key={item.type} variant="quiet" onClick={() => { const id = addBlock(pageId, item.type); onAdded?.(id); }}>
           {item.label}
         </Button>
       ))}

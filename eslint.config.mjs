@@ -10,6 +10,8 @@ export default tseslint.config(
   {
     ignores: [
       "dist/**",
+      "dist-local/**",
+      "release/**",
       ".output/**",
       ".vercel/**",
       ".nitro/**",
@@ -43,5 +45,9 @@ export default tseslint.config(
     },
   },
   // Disable rules that conflict with Prettier formatting.
+  {
+    files: ["desktop-shell/**/*.cjs"],
+    rules: { "@typescript-eslint/no-require-imports": "off" },
+  },
   prettier,
 );

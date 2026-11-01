@@ -1,6 +1,8 @@
-import { useRef, useState } from "react";
+import type { Persisted } from "@/lib/notebook/model";
+import { validateSnapshot } from "@/lib/notebook/schema";
+import { useEffect, useRef, useState } from "react";
 import { Download, FileText, Lightbulb, Plus, Upload } from "lucide-react";
-import { downloadText, sanitize } from "@/lib/notebook/persist";
+import { downloadText } from "@/lib/notebook/persist";
 import { pagesOf, sectionsOf, useNotebook } from "@/lib/notebook/store";
 import { Button } from "@/components/notebook/ui";
 
@@ -19,7 +21,14 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const renameSection = useNotebook((state) => state.renameSection);
   const removeSection = useNotebook((state) => state.removeSection);
   const addPage = useNotebook((state) => state.addPage);
-  const replaceAll = useNotebook((state) => state.replaceAll);
+  const restore = useNotebook((state) => state.restore);
+  const rollback = useNotebook((state) => state.rollback);
+  const rollbackAvailable = useNotebook((state) => state.rollbackAvailable);
+  const busy = useNotebook((state) => state.busy);
+  const [pendingBackup, setPendingBackup] = useState<Persisted | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => { if (pendingBackup && !dialogRef.current?.open) dialogRef.current?.showModal(); }, [pendingBackup]);
   const setNotice = useNotebook((state) => state.setNotice);
   const [notebookName, setNotebookName] = useState("");
   const [sectionFor, setSectionFor] = useState<string | null>(null);
@@ -194,7 +203,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                           }`}
                         >
                           {page.type === "concept" ? <Lightbulb className="size-4 shrink-0 text-accent" /> : <FileText className="size-4 shrink-0" />}
-                          <span className="min-w-0 flex-1 truncate">{page.title}</span>
+                          <span className="min-w-0 flex-1 truncate">{page.title || (page.type === "concept" ? "مفهوم بلا عنوان" : "صفحة بلا عنوان")}</span>
                           {page.type === "lesson" && page.status && page.status !== "understood" ? (
                             <span className="shrink-0 text-xs text-muted">{page.status === "need-review" ? "مراجعة" : page.status === "need-understanding" ? "فهم" : "بدأت"}</span>
                           ) : null}
@@ -259,21 +268,35 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
             const file = event.target.files?.[0];
             event.target.value = "";
             if (!file) return;
+            if (file.size > 64 * 1024 * 1024) { setNotice("النسخة أكبر من ٦٤ ميغابايت."); return; }
             void file.text().then((text) => {
               try {
-                const data = sanitize(JSON.parse(text));
-                if (!data) {
-                  setNotice("الملف ليس نسخة مداد صالحة.");
-                  return;
-                }
-                replaceAll(data);
-              } catch {
-                setNotice("تعذر قراءة ملف النسخة.");
+                setRestoreError(null);
+                setPendingBackup(validateSnapshot(JSON.parse(text)));
+              } catch (error) {
+                setNotice(error instanceof Error ? error.message : "تعذر قراءة ملف النسخة.");
               }
-            });
+            }).catch(() => setNotice("تعذر قراءة ملف النسخة."));
           }}
         />
+        {rollbackAvailable ? <Button variant="quiet" disabled={busy} onClick={() => {
+          if (!window.confirm("الرجوع إلى النسخة السابقة للاستعادة؟ ستُحفظ النسخة الحالية للرجوع إليها.")) return;
+          void rollback().catch((error: unknown) => setNotice(error instanceof Error ? error.message : "تعذر الرجوع."));
+        }}>الرجوع إلى ما قبل الاستعادة</Button> : null}
       </div>
+      {pendingBackup ? (
+        <dialog ref={dialogRef} aria-labelledby="restore-title" className="m-auto max-w-lg rounded-md border border-line bg-sheet p-6 text-ink backdrop:bg-black/40" onCancel={(event) => { if (busy) event.preventDefault(); else setPendingBackup(null); }}>
+          <h2 id="restore-title" className="text-xl font-semibold">استعادة نسخة كاملة</h2>
+          <p className="my-3">ستستبدل الدفاتر الحالية بـ {pendingBackup.notebooks.length} دفاتر، {pendingBackup.sections.length} أقسام، {pendingBackup.pages.length} صفحات، و{pendingBackup.links.length} روابط. تُحفظ نسخة للرجوع قبل الاستبدال.</p>
+          {restoreError ? <p role="alert" className="mb-3 text-accent">{restoreError}</p> : null}
+          <div className="flex gap-3">
+            <Button disabled={busy} variant="solid" onClick={() => {
+              void restore(pendingBackup).then(() => setPendingBackup(null)).catch((error: unknown) => setRestoreError(error instanceof Error ? error.message : "تعذرت الاستعادة."));
+            }}>{busy ? "أستعيد النسخة…" : "تأكيد الاستبدال"}</Button>
+            <Button autoFocus disabled={busy} onClick={() => setPendingBackup(null)}>إلغاء</Button>
+          </div>
+        </dialog>
+      ) : null}
     </div>
   );
 }

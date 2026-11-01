@@ -1,3 +1,4 @@
+import { normalizeTitle, referencedPages, resolveReference } from "./references";
 import {
   CALLOUT_LABEL,
   STATUS_LABEL,
@@ -9,16 +10,7 @@ import {
 } from "@/lib/notebook/model";
 
 export function normalizeArabic(input: string): string {
-  return input
-    .toLowerCase()
-    .replace(/[\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06ed\u0640]/g, "")
-    .replace(/[أإآٱ]/g, "ا")
-    .replace(/ى/g, "ي")
-    .replace(/ؤ/g, "و")
-    .replace(/ئ/g, "ي")
-    .replace(/ة/g, "ه")
-    .replace(/\s+/g, " ")
-    .trim();
+  return normalizeTitle(input);
 }
 
 export function blockPlain(block: Block): string {
@@ -50,8 +42,7 @@ export function wikiTitles(text: string): string[] {
 }
 
 export function findPageByTitle(pages: Page[], title: string): Page | undefined {
-  const key = normalizeArabic(title);
-  return pages.find((page) => normalizeArabic(page.title) === key);
+  return resolveReference(pages, title);
 }
 
 export type Related = {
@@ -71,18 +62,11 @@ export function relatedPages(page: Page, pages: Page[], links: Link[]): Related[
     found.set(other.id, { page: other, via: "link", linkId: link.id });
   }
 
-  const mention = (other: Page, title: string) => {
-    if (other.id === page.id || found.has(other.id)) return;
-    if (normalizeArabic(other.title) !== normalizeArabic(title)) return;
-    found.set(other.id, { page: other, via: "mention" });
-  };
-
-  for (const title of wikiTitles(pageText(page))) {
-    const hit = findPageByTitle(pages, title);
-    if (hit) mention(hit, hit.title);
+  for (const other of page.blocks.flatMap((block) => referencedPages(block, pages))) {
+    if (other.id !== page.id && !found.has(other.id)) found.set(other.id, { page: other, via: "mention" });
   }
   for (const other of pages) {
-    if (wikiTitles(pageText(other)).some((title) => normalizeArabic(title) === normalizeArabic(page.title))) {
+    if (other.id !== page.id && other.blocks.some((block) => referencedPages(block, pages).some((target) => target.id === page.id))) {
       if (!found.has(other.id)) found.set(other.id, { page: other, via: "mention" });
     }
   }
@@ -158,7 +142,7 @@ function blockToMarkdown(block: Block): string {
     case "paragraph":
       return block.text;
     case "code":
-      return "```" + block.lang + "\n" + block.text + "\n```";
+      return "\x60".repeat(Math.max(3, ...[...block.text.matchAll(/\x60+/g)].map((match) => match[0].length + 1))) + block.lang + "\n" + block.text + "\n" + "\x60".repeat(Math.max(3, ...[...block.text.matchAll(/\x60+/g)].map((match) => match[0].length + 1)));
     case "math":
       return "$$\n" + block.tex + "\n$$";
     case "image":
@@ -168,9 +152,10 @@ function blockToMarkdown(block: Block): string {
     case "tasks":
       return block.items.map((item) => `- [${item.done ? "x" : " "}] ${item.text}`).join("\n");
     case "table": {
-      const head = `| ${block.headers.join(" | ")} |`;
+      const escape = (cell: string) => cell.replace(/\|/g, "\\|").replace(/\n/g, "<br>");
+      const head = `| ${block.headers.map(escape).join(" | ")} |`;
       const rule = `| ${block.headers.map(() => "---").join(" | ")} |`;
-      const rows = block.rows.map((row) => `| ${row.join(" | ")} |`);
+      const rows = block.rows.map((row) => `| ${row.map(escape).join(" | ")} |`);
       return [head, rule, ...rows].join("\n");
     }
   }

@@ -1,0 +1,35 @@
+import { cpSync, mkdirSync, rmSync, writeFileSync, readFileSync, chmodSync, statSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { resolve, join } from "node:path";
+
+const { version } = JSON.parse(readFileSync("package.json", "utf8"));
+const stage = resolve(`release/midad-desktop-${version}-deb`);
+const target = join(stage, "opt/midad");
+rmSync(stage, { recursive: true, force: true });
+mkdirSync(target, { recursive: true });
+cpSync("node_modules/electron/dist", target, { recursive: true });
+execFileSync("mv", [join(target, "electron"), join(target, "midad")]);
+rmSync(join(target, "resources/default_app.asar"), { force: true });
+const app = join(target, "resources/app");
+mkdirSync(app, { recursive: true });
+for (const file of ["main.cjs", "policy.cjs", "icon.png"]) cpSync(`desktop-shell/${file}`, join(app,file));
+cpSync("dist-local", join(app,"web"), { recursive: true });
+writeFileSync(join(app,"package.json"), JSON.stringify({ name:"midad-desktop", productName:"Midad", version, main:"main.cjs" }));
+const packages = ["react", "react-dom", "scheduler", "use-sync-external-store", "zustand", "zod", "katex", "lucide-react", "@fontsource/ibm-plex-mono", "@fontsource/ibm-plex-sans-arabic"];
+writeFileSync(join(app,"THIRD-PARTY-NOTICES.txt"), packages.map((name) => `${name}\n${readFileSync(`node_modules/${name}/LICENSE`,"utf8")}\n`).join("\n"));
+// Chromium's helper must retain its standard sandbox permissions on install.
+chmodSync(join(target,"chrome-sandbox"),0o4755);
+chmodSync(join(target,"midad"),0o755);
+mkdirSync(join(stage,"usr/share/applications"),{recursive:true});
+mkdirSync(join(stage,"usr/share/icons/hicolor/256x256/apps"),{recursive:true});
+cpSync("desktop-shell/icon.png",join(stage,"usr/share/icons/hicolor/256x256/apps/midad.png"));
+writeFileSync(join(stage,"usr/share/applications/midad-desktop.desktop"),`[Desktop Entry]\nType=Application\nName=Midad Desktop\nName[ar]=مداد سطح المكتب\nComment=Personal study notebook\nExec=/opt/midad/midad\nIcon=midad\nTerminal=false\nCategories=Education;Office;\nStartupWMClass=Midad\n`);
+mkdirSync(join(stage,"DEBIAN"),{recursive:true});
+const installedSize = Number(execFileSync("du",["-sk",join(stage,"opt"),join(stage,"usr")],{encoding:"utf8"}).trim().split("\n").reduce((sum,line)=>sum+Number(line.split(/\s/)[0]),0));
+writeFileSync(join(stage,"DEBIAN/control"),`Package: midad-desktop\nVersion: ${version}\nSection: education\nPriority: optional\nArchitecture: amd64\nMaintainer: Midad Project <qut2006sib@gmail.com>\nInstalled-Size: ${installedSize}\nDepends: libc6 (>= 2.35), libnspr4, libnss3, libdbus-1-3, libatk1.0-0t64 | libatk1.0-0, libatk-bridge2.0-0t64 | libatk-bridge2.0-0, libcups2t64 | libcups2, libgtk-3-0t64 | libgtk-3-0, libasound2t64 | libasound2, libgbm1, libxkbcommon0, libx11-6, libxcomposite1, libxdamage1, libxext6, libxfixes3, libxrandr2, libxcb1, libexpat1, libudev1, libatspi2.0-0t64 | libatspi2.0-0, libglib2.0-0t64 | libglib2.0-0, libcairo2, libpango-1.0-0, libgcc-s1\nDescription: Midad Arabic personal study notebook\n Standalone desktop app with local notes, math, code, references,\n backup and recovery. Does not require Python, Node.js or a browser.\n`);
+const archive = resolve(`release/Midad-Desktop-${version}-amd64.deb`);
+execFileSync("dpkg-deb",["--root-owner-group","-Zxz","-z6","--build",stage,archive],{stdio:"inherit"});
+const checksum = createHash("sha256").update(readFileSync(archive)).digest("hex");
+writeFileSync(`${archive}.sha256`,`${checksum}  Midad-Desktop-${version}-amd64.deb\n`);
+console.log(JSON.stringify({archive,bytes:statSync(archive).size,sha256:checksum}));

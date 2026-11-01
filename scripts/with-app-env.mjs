@@ -56,7 +56,8 @@ export function readAppEnv(root) {
   try {
     return parseAppEnv(readFileSync(join(root, APP_ENV_REL_PATH), "utf8"));
   } catch {
-    return {};
+    try { return parseAppEnv(readFileSync(join(root, "config/app-env.json"), "utf8")); }
+    catch { return {}; }
   }
 }
 
