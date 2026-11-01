@@ -1,9 +1,7 @@
 import { create } from "zustand";
 import {
   byOrder,
-  conceptBlocks,
   createBlock,
-  lessonBlocks,
   uid,
   type Block,
   type Link,
@@ -19,12 +17,14 @@ import {
 import { validateSnapshot } from "./schema";
 import { readSnapshot, SaveQueue, StorageConflict } from "./storage";
 import { bindPageReferences, localStudyDate } from "./references";
-import { buildSeed } from "@/lib/notebook/seed";
 
 type PagePatch = Partial<Pick<Page, "title" | "status" | "subject" | "source" | "studiedAt">>;
 
 type NotebookState = Persisted & {
   ready: boolean;
+  home: boolean;
+  showHome: () => void;
+  newPage: (type: Page["type"]) => string;
   loadError: string | null;
   readOnly: boolean;
   busy: boolean;
@@ -58,7 +58,7 @@ type NotebookState = Persisted & {
   updatePage: (id: string, patch: PagePatch) => void;
   removePage: (id: string) => void;
   updateBlock: (pageId: string, block: Block) => void;
-  addBlock: (pageId: string, type: Block["type"]) => void;
+  addBlock: (pageId: string, type: Block["type"]) => string;
   moveBlock: (pageId: string, blockId: string, dir: -1 | 1) => void;
   removeBlock: (pageId: string, blockId: string) => void;
   addTask: (pageId: string, blockId: string) => void;
@@ -78,14 +78,6 @@ function mapPage(pages: Page[], id: string, fn: (page: Page) => Page): Page[] {
 
 function nextOrder(items: { order: number }[]): number {
   return items.reduce((max, item) => Math.max(max, item.order), -1) + 1;
-}
-
-function uniqueTitle(pages: Page[], base: string): string {
-  const names = new Set(pages.map((page) => page.title));
-  if (!names.has(base)) return base;
-  let n = 2;
-  while (names.has(`${base} ${n}`)) n += 1;
-  return `${base} ${n}`;
 }
 
 function readTheme(): ThemeName {
@@ -166,7 +158,7 @@ async function restore(data: unknown) {
     await writer.commit(incoming, before);
     savedJson = JSON.stringify(incoming);
     undoSnapshot = null;
-    useNotebook.setState({ ...incoming, canUndo: false, rollbackAvailable: true, saveStatus: "saved", saveError: null,
+    useNotebook.setState({ ...incoming, home: false, canUndo: false, rollbackAvailable: true, saveStatus: "saved", saveError: null,
       notice: "استُعيدت النسخة وحُفظت. يمكنك الرجوع إلى ما قبل الاستعادة." });
   } catch (error) {
     if (error instanceof StorageConflict) useNotebook.setState({ readOnly: true, saveStatus: "conflict", saveError: error.message });
@@ -198,6 +190,22 @@ export const useNotebook = create<NotebookState>((rawSet, get) => {
   return ({
   ...empty,
   ready: false,
+  home: true,
+  showHome: () => set({ home: true, view: "write" }),
+  newPage: (type) => {
+    if (get().readOnly || get().busy || get().loadError || !get().ready) return "";
+    let section = get().sections.find((item) => item.id === get().pages.find((page) => page.id === get().activePageId)?.sectionId) ?? get().sections[0];
+    if (!section) {
+      let notebook = get().notebooks[0];
+      if (!notebook) {
+        get().addNotebook("ملاحظاتي");
+        notebook = get().notebooks[0];
+      }
+      get().addSection(notebook.id, "عام");
+      section = get().sections.find((item) => item.notebookId === notebook.id)!;
+    }
+    return get().addPage({ notebookId: section.notebookId, sectionId: section.id, type });
+  },
   loadError: null,
   readOnly: false,
   busy: false,
@@ -234,13 +242,13 @@ export const useNotebook = create<NotebookState>((rawSet, get) => {
       rawSet({ ready: false, loadError: null, canUndo: false });
       try {
         const stored = await readSnapshot();
-        const data = validateSnapshot(stored.data === null ? buildSeed() : stored.data);
+        const data = validateSnapshot(stored.data === null ? empty : stored.data);
         writer = new SaveQueue(stored.revision);
         if (stored.data === null) await writer.commit(data);
         savedJson = JSON.stringify(data);
         let rollbackAvailable = false;
         try { rollbackAvailable = stored.rollback !== null && !!validateSnapshot(stored.rollback); } catch { /* preserve unreadable rollback */ }
-        rawSet({ ...data, ready: true, readOnly: false, loadError: null, saveStatus: "saved", saveError: null,
+        rawSet({ ...data, home: true, ready: true, readOnly: false, loadError: null, saveStatus: "saved", saveError: null,
           theme: readTheme(), rollbackAvailable });
       } catch (error) {
         writer = null;
@@ -254,7 +262,7 @@ export const useNotebook = create<NotebookState>((rawSet, get) => {
   setNotice: (notice) => set({ notice }),
   setSearchOpen: (searchOpen) => set({ searchOpen }),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
-  openPage: (id) => set({ activePageId: id, view: "write", searchOpen: false, sidebarOpen: false }),
+  openPage: (id) => set({ activePageId: id, home: false, view: "write", searchOpen: false, sidebarOpen: false }),
   addNotebook: (title) => {
     const name = title.trim();
     if (!name) return;
@@ -317,16 +325,16 @@ export const useNotebook = create<NotebookState>((rawSet, get) => {
       notebookId,
       sectionId,
       type,
-      title: uniqueTitle(get().pages, type === "lesson" ? "درس جديد" : "مفهوم جديد"),
+      title: "",
       status: type === "lesson" ? "started" : null,
       subject: "",
       source: "",
       studiedAt: localStudyDate(),
-      blocks: type === "lesson" ? lessonBlocks() : conceptBlocks(),
+      blocks: [],
       createdAt: now,
       updatedAt: now,
     };
-    set({ pages: [...get().pages, page], activePageId: page.id, view: "write", sidebarOpen: false });
+    set({ pages: [...get().pages, page], activePageId: page.id, home: false, view: "write", sidebarOpen: false });
     return page.id;
   },
   updatePage: (id, patch) => {
@@ -363,6 +371,7 @@ export const useNotebook = create<NotebookState>((rawSet, get) => {
     set({
       pages: mapPage(get().pages, pageId, (page) => ({ ...page, blocks: [...page.blocks, block] })),
     });
+    return block.id;
   },
   moveBlock: (pageId, blockId, dir) => {
     set({

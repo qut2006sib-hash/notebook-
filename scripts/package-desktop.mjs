@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { resolve, join } from "node:path";
 
-const version = "0.2.0";
+const { version } = JSON.parse(readFileSync("package.json", "utf8"));
 const stage = resolve(`release/midad-desktop-${version}-deb`);
 const target = join(stage, "opt/midad");
 rmSync(stage, { recursive: true, force: true });

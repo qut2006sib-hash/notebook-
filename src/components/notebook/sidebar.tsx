@@ -203,7 +203,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                           }`}
                         >
                           {page.type === "concept" ? <Lightbulb className="size-4 shrink-0 text-accent" /> : <FileText className="size-4 shrink-0" />}
-                          <span className="min-w-0 flex-1 truncate">{page.title}</span>
+                          <span className="min-w-0 flex-1 truncate">{page.title || (page.type === "concept" ? "مفهوم بلا عنوان" : "صفحة بلا عنوان")}</span>
                           {page.type === "lesson" && page.status && page.status !== "understood" ? (
                             <span className="shrink-0 text-xs text-muted">{page.status === "need-review" ? "مراجعة" : page.status === "need-understanding" ? "فهم" : "بدأت"}</span>
                           ) : null}

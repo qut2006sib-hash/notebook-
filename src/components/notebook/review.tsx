@@ -28,8 +28,8 @@ export function Review() {
       </header>
 
       <section className="rounded-md border border-line bg-sheet p-4">
-        <h2 className="text-lg font-semibold">درس بالقالب</h2>
-        <p className="mt-1 text-sm text-muted">القالب يضع الفكرة والتعريف والمثال والخطأ والسؤال والخلاصة. الحالة تبدأ «بدأت».</p>
+        <h2 className="text-lg font-semibold">صفحة فارغة</h2>
+        <p className="mt-1 text-sm text-muted">تبدأ بعنوان فقط. أضف الفقرات والمعادلات والكود حسب حاجتك.</p>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <select
             className="min-h-11 min-w-0 flex-1 rounded-md border border-line bg-paper px-3"
@@ -51,7 +51,7 @@ export function Review() {
               addPage({ notebookId: section.notebookId, sectionId: section.id, type: "lesson" });
             }}
           >
-            إنشاء الدرس
+            إنشاء الصفحة
           </Button>
         </div>
       </section>

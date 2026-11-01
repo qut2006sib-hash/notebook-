@@ -5,13 +5,14 @@ import { Menu, Moon, Search, Sun } from "lucide-react";
 import { openTasks } from "@/lib/notebook/query";
 import { exportSnapshot, useNotebook } from "@/lib/notebook/store";
 import { Editor } from "@/components/notebook/editor";
-import { Relations } from "@/components/notebook/relations";
 import { Review } from "@/components/notebook/review";
 import { SearchDialog } from "@/components/notebook/search-dialog";
 import { Sidebar } from "@/components/notebook/sidebar";
 import { Button } from "@/components/notebook/ui";
 
 export function NotebookApp() {
+  const home = useNotebook((state) => state.home);
+  const showHome = useNotebook((state) => state.showHome);
   const ready = useNotebook((state) => state.ready);
   const loadError = useNotebook((state) => state.loadError);
   const readOnly = useNotebook((state) => state.readOnly);
@@ -109,6 +110,7 @@ export function NotebookApp() {
           <Button variant="ghost" className="lg:hidden" aria-label="فتح الدفاتر" onClick={() => setSidebarOpen(true)}>
             <Menu className="size-4" />
           </Button>
+          <Button variant="ghost" onClick={showHome}>البداية</Button>
           <div className="flex rounded-md border border-line p-1">
             <button
               type="button"
@@ -160,14 +162,9 @@ export function NotebookApp() {
           </p>
         ) : null}
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <fieldset disabled={readOnly || busy} className="min-w-0">{view === "review" ? <Review /> : <Editor />}</fieldset>
+          <fieldset disabled={readOnly || busy} className="min-w-0">{view === "review" ? <Review /> : <Editor key={home ? "home" : activePageId} />}</fieldset>
         </div>
       </div>
-      {view === "write" && activePageId ? (
-        <aside className="hidden h-full w-72 shrink-0 overflow-y-auto border-s border-line px-4 py-6 xl:block">
-          <fieldset disabled={readOnly || busy} className="min-w-0"><Relations pageId={activePageId} /></fieldset>
-        </aside>
-      ) : null}
       <SearchDialog />
     </div>
   );

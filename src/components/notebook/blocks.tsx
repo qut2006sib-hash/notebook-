@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import katex from "katex";
 import "katex/dist/katex.min.css";
-import { ArrowDown, ArrowUp, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { CALLOUT_LABEL, CODE_LANGS, type Block, type CalloutKind } from "@/lib/notebook/model";
 import { normalizeTitle, resolveReference } from "@/lib/notebook/references";
 import { readImageFile } from "@/lib/notebook/persist";
@@ -112,54 +112,23 @@ function RichText({ text, references }: { text: string; references?: Record<stri
   );
 }
 
-function Toolbar({
-  pageId,
-  block,
-}: {
-  pageId: string;
-  block: Block;
-}) {
-  const moveBlock = useNotebook((state) => state.moveBlock);
-  const removeBlock = useNotebook((state) => state.removeBlock);
-  return (
-    <div className="absolute -top-4 end-0 z-10 flex flex-wrap gap-2 rounded-md border border-line bg-sheet shadow-sm">
-      <Button variant="ghost" aria-label="تحريك لأعلى" onMouseDown={(event) => event.preventDefault()} onClick={() => moveBlock(pageId, block.id, -1)}>
-        <ArrowUp className="size-4" />
-      </Button>
-      <Button variant="ghost" aria-label="تحريك لأسفل" onMouseDown={(event) => event.preventDefault()} onClick={() => moveBlock(pageId, block.id, 1)}>
-        <ArrowDown className="size-4" />
-      </Button>
-      <Button variant="ghost" aria-label="حذف الكتلة" onMouseDown={(event) => event.preventDefault()} onClick={() => removeBlock(pageId, block.id)}>
-        <Trash2 className="size-4" />
-        حذف
-      </Button>
-    </div>
-  );
-}
-
-export function BlockView({ pageId, block }: { pageId: string; block: Block }) {
+export function BlockView({ pageId, block, focusOnMount = false }: { pageId: string; block: Block; focusOnMount?: boolean }) {
   const updateBlock = useNotebook((state) => state.updateBlock);
   const addTask = useNotebook((state) => state.addTask);
   const updateTask = useNotebook((state) => state.updateTask);
   const removeTask = useNotebook((state) => state.removeTask);
   const setNotice = useNotebook((state) => state.setNotice);
-  const [editing, setEditing] = useState(false);
-  const [selected, setSelected] = useState(false);
-
-  const showTools = editing || selected;
+  const [editing, setEditing] = useState(focusOnMount);
 
   return (
     <section
       className="relative border-b border-line/70 py-4"
-      onFocus={() => setSelected(true)}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) {
-          setSelected(false);
           setEditing(false);
         }
       }}
     >
-      {showTools ? <Toolbar pageId={pageId} block={block} /> : null}
       {block.type === "heading" ? (
         editing ? (
           <AutoText
@@ -212,20 +181,18 @@ export function BlockView({ pageId, block }: { pageId: string; block: Block }) {
         <div>
           <label className="mb-2 flex items-center gap-2 text-sm text-muted">
             لغة
-            <select
-              className="min-h-11 rounded-md border border-line bg-paper px-2 text-ink"
-              value={block.lang}
+            <input
+              aria-label="لغة الكود" list={`code-langs-${block.id}`} dir="ltr"
+              className="min-h-11 w-48 rounded-md border border-line bg-paper px-2 text-ink"
+              value={block.lang} placeholder="python"
               onChange={(event) => updateBlock(pageId, { ...block, lang: event.target.value })}
-            >
-              {CODE_LANGS.map((lang) => (
-                <option key={lang} value={lang}>
-                  {lang}
-                </option>
-              ))}
-            </select>
+            />
+            <datalist id={`code-langs-${block.id}`}>
+              {CODE_LANGS.map((lang) => <option key={lang} value={lang} />)}
+            </datalist>
           </label>
           <div dir="ltr" className="isolate-bidi overflow-x-auto rounded-md border border-line bg-paper p-3">
-            <AutoText mono dir="ltr" value={block.text} placeholder="code" onChange={(text) => updateBlock(pageId, { ...block, text })} />
+            <AutoText autoFocus={focusOnMount} mono dir="ltr" value={block.text} placeholder="code" onChange={(text) => updateBlock(pageId, { ...block, text })} />
           </div>
         </div>
       ) : null}
@@ -233,7 +200,7 @@ export function BlockView({ pageId, block }: { pageId: string; block: Block }) {
       {block.type === "math" ? (
         <div className="grid gap-3">
           <div dir="ltr" className="isolate-bidi rounded-md border border-line bg-paper p-3">
-            <AutoText mono dir="ltr" value={block.tex} placeholder="E = mc^2" onChange={(tex) => updateBlock(pageId, { ...block, tex })} />
+            <AutoText autoFocus={focusOnMount} mono dir="ltr" value={block.tex} placeholder="E = mc^2" onChange={(tex) => updateBlock(pageId, { ...block, tex })} />
           </div>
           <MathHtml tex={block.tex} display />
         </div>
@@ -416,12 +383,12 @@ const ADDERS: { type: Block["type"]; label: string }[] = [
   { type: "tasks", label: "أسئلة" },
 ];
 
-export function AddBlockBar({ pageId }: { pageId: string }) {
+export function AddBlockBar({ pageId, onAdded }: { pageId: string; onAdded?: (id: string) => void }) {
   const addBlock = useNotebook((state) => state.addBlock);
   return (
     <div className="flex flex-wrap gap-2 py-4">
       {ADDERS.map((item) => (
-        <Button key={item.type} variant="quiet" onClick={() => addBlock(pageId, item.type)}>
+        <Button key={item.type} variant="quiet" onClick={() => { const id = addBlock(pageId, item.type); onAdded?.(id); }}>
           {item.label}
         </Button>
       ))}

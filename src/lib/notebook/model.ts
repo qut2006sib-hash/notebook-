@@ -98,7 +98,7 @@ export const CALLOUT_LABEL: Record<CalloutKind, string> = {
   summary: "خلاصة",
 };
 
-export const CODE_LANGS = ["python", "text", "javascript", "sql", "bash"] as const;
+export const CODE_LANGS = ["python", "javascript", "typescript", "java", "cpp", "c", "csharp", "go", "rust", "sql", "bash", "html", "css", "json", "text"] as const;
 
 export function uid(): string {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();

@@ -14,7 +14,13 @@ let factory: IDBFactory;
 let sequence = 0;
 beforeEach(() => { factory = new IDBFactory(); globalThis.indexedDB = factory; });
 afterEach(() => { /* Every storage operation closes its database handle. */ });
-async function store() { return (await import(`./store.ts?test=${++sequence}`)).useNotebook; }
+async function store(seed = true) {
+  if (seed) {
+    try { if ((await readSnapshot()).data === null) await commitSnapshot(fixture(), 0); }
+    catch { /* Fault-injection tests intentionally make storage unavailable. */ }
+  }
+  return (await import(`./store.ts?test=${++sequence}`)).useNotebook;
+}
 async function changeRaw(key: string, value: unknown) {
   await new Promise<void>((resolve, reject) => {
     const req = indexedDB.open("midad", 1);
@@ -200,4 +206,62 @@ test("Arabic search and Markdown preserve useful content", () => {
   const data=fixture();const page={...data.pages[0]!,title:"إِسقاط",blocks:[{id:"t",type:"table",headers:["A|B"],rows:[["x\ny"]]} as Block,{id:"c",type:"code",lang:"text",text:"``` nested"} as Block]};
   assert.equal(searchPages([page],"اسقاط").length,1);
   const md=pageToMarkdown(page,[page],[]);assert.ok(md.includes("A\\|B"));assert.ok(md.includes("x<br>y"));assert.ok(md.includes("````text"));
+});
+
+test("first launch is empty and does not install sample notes", async () => {
+  const app = await store(false);
+  await app.getState().hydrate();
+  assert.equal(app.getState().home, true);
+  assert.equal(app.getState().pages.length, 0);
+  assert.equal(app.getState().notebooks.length, 0);
+  assert.deepEqual(validateSnapshot((await readSnapshot()).data).pages, []);
+});
+
+test("new lessons and concepts start with no blocks or forced templates", async () => {
+  const app = await store(false); await app.getState().hydrate();
+  const pageId = app.getState().newPage("lesson");
+  const conceptId = app.getState().newPage("concept");
+  assert.ok(pageId && conceptId);
+  assert.equal(app.getState().home, false);
+  assert.deepEqual(app.getState().pages.map((page: any) => page.blocks), [[], []]);
+  assert.equal(app.getState().notebooks.length, 1);
+  assert.equal(app.getState().sections.length, 1);
+  await app.getState().flush();
+  assert.equal(validateSnapshot((await readSnapshot()).data).pages.length, 2);
+});
+
+test("upgrade opens a quiet home while preserving every old page and its content", async () => {
+  const previous = fixture(); await commitSnapshot(previous, 0);
+  const app = await store(false); await app.getState().hydrate();
+  assert.equal(app.getState().home, true);
+  assert.deepEqual(app.getState().pages, previous.pages);
+  assert.deepEqual((await readSnapshot()).data, previous);
+  app.getState().openPage(previous.pages[0]!.id);
+  assert.equal(app.getState().home, false);
+  assert.equal(app.getState().activePageId, previous.pages[0]!.id);
+  await app.getState().flush();
+});
+
+test("a freely composed note survives save, reopen, JSON restore, and further editing", async () => {
+  const app = await store(false); await app.getState().hydrate();
+  const id = app.getState().newPage("lesson");
+  app.getState().updatePage(id, { title: "ملاحظاتي بالعربية" });
+  const textId = app.getState().addBlock(id, "paragraph");
+  app.getState().updateBlock(id, { id: textId, type: "paragraph", text: "My notes — شرح شخصي" });
+  const codeId = app.getState().addBlock(id, "code");
+  app.getState().updateBlock(id, { id: codeId, type: "code", lang: "haskell", text: "main = putStrLn \"hello\"" });
+  const mathId = app.getState().addBlock(id, "math");
+  app.getState().updateBlock(id, { id: mathId, type: "math", tex: "x^2 + y^2" });
+  assert.equal(await app.getState().flush(), true);
+  const backup = JSON.parse(JSON.stringify((await readSnapshot()).data));
+  await app.getState().retryLoad();
+  assert.equal(app.getState().home, true);
+  assert.equal(app.getState().pages[0].blocks[1].lang, "haskell");
+  await app.getState().restore(backup);
+  assert.equal(app.getState().home, false);
+  app.getState().updateBlock(id, { id: textId, type: "paragraph", text: "عدت وأكملت الكتابة" });
+  await app.getState().flush();
+  const saved = validateSnapshot((await readSnapshot()).data);
+  assert.equal((saved.pages[0]!.blocks[0] as { text: string }).text, "عدت وأكملت الكتابة");
+  assert.equal(saved.pages[0]!.blocks.length, 3);
 });
