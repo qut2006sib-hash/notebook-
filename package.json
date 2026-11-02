@@ -24,7 +24,8 @@
     "dev:local": "vite --config vite.local.config.ts --host 0.0.0.0 --port 8080",
     "package:local": "npm run build:local && node scripts/package-local.mjs",
     "test:desktop": "node --test desktop-shell/*.test.cjs",
-    "package:desktop": "npm run build:local && node scripts/package-desktop.mjs"
+    "package:desktop": "npm run build:local && node scripts/package-desktop.mjs",
+    "package:windows": "npm run build:local && node scripts/package-windows.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",
@@ -94,6 +95,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "electron": "^45.1.0",
+    "electron-builder": "26.18.0",
     "eslint": "^9.20.0",
     "eslint-config-prettier": "^10.1.1",
     "eslint-plugin-prettier": "^5.2.6",
@@ -105,5 +107,5 @@
     "prettier": "^3.4.0",
     "typescript-eslint": "^8.56.1"
   },
-  "version": "0.3.0"
+  "version": "0.3.1"
 }

@@ -21,3 +21,20 @@ jobs:
         with:
           name: Midad-Desktop-Ubuntu
           path: release/Midad-Desktop-*.deb*
+  windows-package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run package:windows
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Midad-Desktop-Windows-x64
+          if-no-files-found: error
+          path: |
+            release/windows/Midad-Desktop-*-Setup.exe*
+            release/windows/Midad-Desktop-*-Windows-x64.zip*
