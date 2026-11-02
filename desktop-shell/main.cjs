@@ -5,6 +5,7 @@ const { mkdirSync } = require("node:fs");
 const { CSP, appFile, isAppUrl, windowOptions } = require("./policy.cjs");
 
 app.setName("Midad");
+app.setAppUserModelId?.("org.midad.notebook");
 app.commandLine.appendSwitch("class", "Midad");
 const profile = path.join(app.getPath("appData"), "Midad");
 mkdirSync(profile, { recursive: true });
